@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    env:
+      GOWORK: 'off'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Verify source and modules
+        run: |
+          test -z "$(gofmt -l .)"
+          go mod verify
+      - name: Test and vet
+        run: make test vet
+      - name: Build install archive
+        run: python3 tools/package.py --platform linux/amd64
+      - name: Native runtime smoke check
+        run: |
+          version=$(python3 -c 'import json; print(json.load(open("manifest.json"))["version"])')
+          go run ./tools/smoke "$(pwd)/dist/$version/plugin-linux-amd64" "$version"
+
+  settings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Prepare existing browser test tooling
+        run: |
+          npm install --prefix "$RUNNER_TEMP/mediux-ui" --no-save --ignore-scripts playwright@1.62.1
+          "$RUNNER_TEMP/mediux-ui/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Check settings page
+        env:
+          NODE_PATH: ${{ runner.temp }}/mediux-ui/node_modules
+        run: node tests/settings-ui.test.cjs

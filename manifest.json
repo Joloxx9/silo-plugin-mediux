@@ -1,0 +1,124 @@
+{
+  "plugin_id": "community.mediux",
+  "version": "0.1.6",
+  "checksum": "__CHECKSUM__",
+  "silo_api_version": "v1",
+  "presentation": {
+    "display_name": "Mediux Artwork",
+    "summary": "Artwork from Mediux for TMDB and TVDB identified media.",
+    "description_markdown": "Community Mediux artwork provider. It supplies remote Mediux URLs; Silo controls local or S3 artwork caching.",
+    "setup_markdown": "Configure a Mediux API token, then put **Mediux Artwork** first for artwork. Other metadata providers can fill text and IDs; TMDB and TVDB IDs bootstrap Mediux lookup.",
+    "homepage_url": "https://mediux.pro",
+    "publisher_name": "Pukabyte",
+    "source_url": "https://github.com/Pukabyte/silo-plugin-mediux",
+    "support_url": "https://github.com/Pukabyte/silo-plugin-mediux/issues",
+    "changelog_url": "https://github.com/Pukabyte/silo-plugin-mediux/releases",
+    "publisher_url": "https://github.com/Pukabyte",
+    "license_spdx": "AGPL-3.0-or-later"
+  },
+  "supported_platforms": [
+    {
+      "os": "linux",
+      "arch": "amd64"
+    },
+    {
+      "os": "linux",
+      "arch": "arm64"
+    },
+    {
+      "os": "darwin",
+      "arch": "arm64"
+    }
+  ],
+  "capabilities": [
+    {
+      "type": "metadata_provider.v1",
+      "id": "mediux",
+      "display_name": "Mediux Artwork",
+      "description": "Mediux artwork for movies and series.",
+      "metadata": {
+        "default_priority": {
+          "movie": 1,
+          "series": 1,
+          "season": 1,
+          "episode": 1
+        },
+        "lookup_provider_ids": [
+          "tmdb",
+          "tvdb"
+        ],
+        "image_lookup_provider_ids": [
+          "tmdb",
+          "tvdb"
+        ]
+      }
+    },
+    {
+      "type": "image_resolver.v1",
+      "id": "mediux",
+      "display_name": "Mediux Images",
+      "description": "Resolves mediux:// artwork paths.",
+      "metadata": {
+        "schemes": [
+          "mediux"
+        ],
+        "priority": 100
+      }
+    },
+    {
+      "type": "http_routes.v1",
+      "id": "creator-settings",
+      "display_name": "Mediux Creator Lookup",
+      "description": "Admin-only public creator username search for artwork preferences."
+    }
+  ],
+  "global_config_schema": [
+    {
+      "key": "settings",
+      "title": "Mediux settings",
+      "required": true,
+      "json_schema": "{\"type\":\"object\",\"required\":[\"api_token\"],\"properties\":{\"api_token\":{\"type\":\"string\",\"minLength\":1}}}",
+      "admin_form": {
+        "fields": [
+          {
+            "key": "api_token",
+            "label": "Mediux API token",
+            "control": 3,
+            "secret": true,
+            "required": true
+          }
+        ]
+      },
+      "description": "Configure your API token here. Use Mediux artwork settings in the plugin menu or admin sidebar for creator priorities and artwork preferences."
+    }
+  ],
+  "http_routes": [
+    {
+      "id": "creators",
+      "method": "GET",
+      "path": "/creators",
+      "access": "admin"
+    },
+    {
+      "id": "artwork-settings",
+      "method": "GET",
+      "path": "/settings",
+      "access": "admin",
+      "navigable": true,
+      "navigation_label": "Mediux artwork settings",
+      "navigation_kind": "admin"
+    },
+    {
+      "id": "get-artwork-settings",
+      "method": "GET",
+      "path": "/settings/config",
+      "access": "admin"
+    },
+    {
+      "id": "save-artwork-settings",
+      "method": "PUT",
+      "path": "/settings/config",
+      "access": "admin"
+    }
+  ]
+}
