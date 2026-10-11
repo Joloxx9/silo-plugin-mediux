@@ -3,7 +3,7 @@
     {
       "manifest": {
         "plugin_id": "community.mediux",
-        "version": "0.1.7",
+        "version": "0.1.8",
         "silo_api_version": "v1",
         "presentation": {
           "display_name": "Mediux Artwork",
@@ -125,19 +125,19 @@
         ]
       },
       "repo_url": "https://github.com/Pukabyte/silo-plugin-mediux",
-      "checksums_url": "https://github.com/Pukabyte/silo-plugin-mediux/releases/download/v0.1.7/checksums.txt",
+      "checksums_url": "https://github.com/Pukabyte/silo-plugin-mediux/releases/download/v0.1.8/checksums.txt",
       "binaries": {
         "linux/amd64": {
-          "url": "https://github.com/Pukabyte/silo-plugin-mediux/releases/download/v0.1.7/plugin-linux-amd64",
-          "checksum": "2f3e9f99d94d68dd70f6080ff04c24bfa6c4db7dabc77fcbf42d8dc1006a5306"
+          "url": "https://github.com/Pukabyte/silo-plugin-mediux/releases/download/v0.1.8/plugin-linux-amd64",
+          "checksum": "80fc8e8267ea9df99265561bf02cc67a4fa944653602d3fd6afda8cc0e3a3f61"
         },
         "linux/arm64": {
-          "url": "https://github.com/Pukabyte/silo-plugin-mediux/releases/download/v0.1.7/plugin-linux-arm64",
-          "checksum": "4e0bf3c4ed7468ab28f9e4bada70833defa40ecfaf69b496b92a821afdcda32e"
+          "url": "https://github.com/Pukabyte/silo-plugin-mediux/releases/download/v0.1.8/plugin-linux-arm64",
+          "checksum": "abbbb0f2c205ee9b30d6400b0fe56e3dee879ef2391725fc659d3e56c0f1964c"
         },
         "darwin/arm64": {
-          "url": "https://github.com/Pukabyte/silo-plugin-mediux/releases/download/v0.1.7/plugin-darwin-arm64",
-          "checksum": "5148e25f40617d51312c56a5d0acee0058d068e48afe6460df91b3c80a6e7342"
+          "url": "https://github.com/Pukabyte/silo-plugin-mediux/releases/download/v0.1.8/plugin-darwin-arm64",
+          "checksum": "e5f31946a7e90c68af5bf0f395912529b29ceb53991efdab7f70b99126b8668d"
         }
       }
     }
