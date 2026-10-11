@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Consider Mediux collection sets when selecting movie artwork. Previously only movie sets were fetched, so a movie whose prioritized artwork existed only in a collection set fell back to the most popular movie set from an unlisted creator.
+
 ## 0.1.8
 
 - Show all eligible Mediux artwork in Silo's manual image picker while retaining automatic best-image selection for refreshes.

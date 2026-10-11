@@ -250,55 +250,90 @@ func (p *provider) resolveTVDB(ctx context.Context, typ, tvdb string) (string, e
 const showQuery = `query($tmdb_id: ID!){shows_by_id(id:$tmdb_id){id show_sets(limit:-1){ id popularity user_created{username} show_poster(limit:-1){id modified_on language{display_name}} show_backdrop(limit:-1){id modified_on language{display_name}} season_posters(limit:-1){ id modified_on language{display_name} season{season_number}} titlecards(limit:-1){id modified_on language{display_name} episode{episode_number season_id{season_number}}} files(limit:-1){ id file_type modified_on language{display_name} }}}}`
 const movieQuery = `query($tmdb_id: ID!){movies_by_id(id:$tmdb_id){id movie_sets(limit:-1){id popularity user_created{username} movie_poster(limit:-1){id modified_on language{display_name}} movie_backdrop(limit:-1){id modified_on language{display_name}} files(limit:-1){id file_type modified_on language{display_name}}}}}`
 
+// Collection sets live on a different branch of the Mediux schema than movie
+// sets: a movie reaches them through its TMDB collection, and the poster that
+// belongs to a collection set hangs off the collection's member movie rather
+// than off the movie queried by id. Without this a movie whose only artwork
+// sits in a collection set looks to the plugin as if it had no set at all.
+//
+// The shape mirrors Mediux's own AURA client, including the nested filter that
+// drops the plain movie-set images already covered by movieQuery. The member
+// movies are not filtered server-side because movies_by_id takes an ID! while
+// Directus filters compare strings; parseCollectionBundle keeps only the
+// requested movie instead.
+const movieCollectionQuery = `query($tmdb_id: ID!){movies_by_id(id:$tmdb_id){id collection_id{movies{id posters(filter:{collection_set:{id:{_nnull:true}}}){id modified_on language{display_name} collection_set{id popularity user_created{username}}} backdrops(filter:{collection_set:{id:{_nnull:true}}}){id modified_on language{display_name} collection_set{id popularity user_created{username}}}}}}}`
+
 func (p *provider) fetch(ctx context.Context, typ, id string) (bundle, error) {
 	cfg := p.snapshot()
 	if strings.TrimSpace(cfg.Token) == "" {
 		return bundle{}, errors.New("Mediux API token is not configured")
 	}
-	q := movieQuery
 	if typ == "series" {
-		q = showQuery
+		raw, err := p.query(ctx, cfg.Token, showQuery, id)
+		if err != nil {
+			return bundle{}, err
+		}
+		return parseBundle(raw, typ, id)
 	}
-	body, _ := json.Marshal(map[string]any{"query": q, "variables": map[string]string{"tmdb_id": id}})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint, bytes.NewReader(body))
+	raw, err := p.query(ctx, cfg.Token, movieQuery, id)
 	if err != nil {
 		return bundle{}, err
 	}
-	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	b, err := parseBundle(raw, typ, id)
+	if err != nil {
+		return bundle{}, err
+	}
+	// Collection sets are additive, so a failure reaching or reading them must
+	// not cost the caller the movie sets that already resolved.
+	if craw, cerr := p.query(ctx, cfg.Token, movieCollectionQuery, id); cerr == nil {
+		if cb, perr := parseCollectionBundle(craw, id); perr == nil {
+			b.Sets = append(b.Sets, cb.Sets...)
+		}
+	}
+	return b, nil
+}
+
+func (p *provider) query(ctx context.Context, token, q, id string) (json.RawMessage, error) {
+	body, _ := json.Marshal(map[string]any{"query": q, "variables": map[string]string{"tmdb_id": id}})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	select {
 	case p.sem <- struct{}{}:
 	case <-ctx.Done():
-		return bundle{}, ctx.Err()
+		return nil, ctx.Err()
 	}
 	defer func() { <-p.sem }()
 	res, err := p.client.Do(req)
 	if err != nil {
-		return bundle{}, err
+		return nil, err
 	}
 	defer res.Body.Close()
 	const maxResponse = 2 << 20
 	raw, err := io.ReadAll(io.LimitReader(res.Body, maxResponse+1))
 	if err != nil {
-		return bundle{}, err
+		return nil, err
 	}
 	if len(raw) > maxResponse {
-		return bundle{}, errors.New("Mediux API response exceeds size limit")
+		return nil, errors.New("Mediux API response exceeds size limit")
 	}
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return bundle{}, fmt.Errorf("Mediux API status %d", res.StatusCode)
+		return nil, fmt.Errorf("Mediux API status %d", res.StatusCode)
 	}
 	var g struct {
 		Data   json.RawMessage   `json:"data"`
 		Errors []json.RawMessage `json:"errors"`
 	}
 	if err = json.Unmarshal(raw, &g); err != nil {
-		return bundle{}, err
+		return nil, err
 	}
 	if len(g.Errors) > 0 {
-		return bundle{}, errors.New("Mediux API returned GraphQL errors")
+		return nil, errors.New("Mediux API returned GraphQL errors")
 	}
-	return parseBundle(g.Data, typ, id)
+	return g.Data, nil
 }
 func parseBundle(raw json.RawMessage, typ, expectedID string) (bundle, error) {
 	var root map[string]json.RawMessage
@@ -433,6 +468,83 @@ func parseBundle(raw json.RawMessage, typ, expectedID string) (bundle, error) {
 			}
 		}
 		b.Sets = append(b.Sets, s)
+	}
+	return b, nil
+}
+
+// collectionArt is one image hanging off a collection set. Unlike movie sets,
+// where the set carries its images, here each image names the set it belongs to.
+type collectionArt struct {
+	ID       string `json:"id"`
+	Modified string `json:"modified_on"`
+	Language struct {
+		DisplayName string `json:"display_name"`
+	} `json:"language"`
+	Set struct {
+		ID         string  `json:"id"`
+		Popularity float64 `json:"popularity"`
+		User       struct {
+			Username string `json:"username"`
+		} `json:"user_created"`
+	} `json:"collection_set"`
+}
+
+// parseCollectionBundle folds the collection branch into the same sets the
+// movie branch yields, so selectArt applies creator priority and popularity to
+// both without a special case.
+func parseCollectionBundle(raw json.RawMessage, expectedID string) (bundle, error) {
+	var root struct {
+		Movie *struct {
+			ID         string `json:"id"`
+			Collection *struct {
+				Movies []struct {
+					ID        string          `json:"id"`
+					Posters   []collectionArt `json:"posters"`
+					Backdrops []collectionArt `json:"backdrops"`
+				} `json:"movies"`
+			} `json:"collection_id"`
+		} `json:"movies_by_id"`
+	}
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return bundle{}, err
+	}
+	if root.Movie == nil {
+		return bundle{}, nil
+	}
+	if root.Movie.ID != "" && root.Movie.ID != expectedID {
+		return bundle{}, errors.New("Mediux identity mismatch")
+	}
+	// A movie outside any TMDB collection has no collection sets to offer.
+	if root.Movie.Collection == nil {
+		return bundle{}, nil
+	}
+	b := bundle{}
+	index := map[string]int{}
+	add := func(a collectionArt, kind string) {
+		if a.ID == "" || a.Set.ID == "" {
+			return
+		}
+		i, ok := index[a.Set.ID]
+		if !ok {
+			i = len(b.Sets)
+			index[a.Set.ID] = i
+			b.Sets = append(b.Sets, set{ID: a.Set.ID, Creator: a.Set.User.Username, Popularity: a.Set.Popularity})
+		}
+		at, _ := time.Parse(time.RFC3339Nano, a.Modified)
+		b.Sets[i].Art = append(b.Sets[i].Art, artwork{ID: a.ID, Creator: a.Set.User.Username, Kind: kind, SetID: a.Set.ID, Popularity: a.Set.Popularity, Modified: at, Language: normalizeLanguage(a.Language.DisplayName)})
+	}
+	for _, m := range root.Movie.Collection.Movies {
+		// The other collection members are separate library items that resolve
+		// through their own lookups; only the requested movie's artwork applies.
+		if m.ID != expectedID {
+			continue
+		}
+		for _, a := range m.Posters {
+			add(a, "poster")
+		}
+		for _, a := range m.Backdrops {
+			add(a, "backdrop")
+		}
 	}
 	return b, nil
 }

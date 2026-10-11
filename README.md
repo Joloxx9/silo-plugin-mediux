@@ -33,6 +33,12 @@ Search for a Mediux username or add one manually. Use **Up/Down** to arrange cre
 - **Only use prioritized creators** restricts artwork to your list.
 - **Excluded creators** are never selected.
 
+Movie artwork is considered from both Mediux **movie sets** and **collection
+sets**. A movie that a creator published only inside a collection set, such as
+a franchise collection, competes on the same footing as one from a dedicated
+movie set, so your creator order decides between them. Series have no
+collections and are unaffected.
+
 ## Matching season posters and title cards
 
 Season posters and title cards have separate consistency settings, so each can come from a different set.
