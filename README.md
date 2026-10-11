@@ -50,7 +50,8 @@ For missing artwork, choose whether to fall back to another Mediux set or leave 
 
 ## Other artwork settings
 
-- **Best image only** supplies automatic choices. **All matching images** adds gallery candidates where your Silo version supports them.
+- **Best image only** supplies automatic choices. On Silo versions supporting full Mediux galleries, the manual picker shows all matching images, while keeping creator exclusions and the **Only use prioritized creators** filter. Older Silo versions may still limit the picker to automatic choices.
+- **All matching images** makes every eligible image available for hosts that do not yet distinguish manual picking from automatic refresh.
 - **Optimized JPEG** uses smaller images. **Original** preserves source quality. Logos retain transparency.
 - **Cache hours** controls how long Mediux lookup results are reused. Default: 24 hours. Set 0 to disable this cache.
 

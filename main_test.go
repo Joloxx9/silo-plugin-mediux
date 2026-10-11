@@ -13,6 +13,7 @@ import (
 
 	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
 	"github.com/Silo-Server/silo-plugin-sdk/pkg/pluginsdk/manifest"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -222,6 +223,105 @@ func TestServiceUsesSetAnchorButAllGalleryRemainsComplete(t *testing.T) {
 	if err != nil || len(seasons.Seasons) != 1 || !strings.Contains(seasons.Seasons[0].PosterPath, "season-a") {
 		t.Fatalf("all season record: %#v %v", seasons, err)
 	}
+}
+
+func TestGetImages_GalleryPurposeReturnsAllEligibleArtwork(t *testing.T) {
+	p := newProvider()
+	p.configure(map[string]any{
+		"api_token":              "safe",
+		"image_selection":        "BestOnly",
+		"priority_creators":      "fav",
+		"excluded_creators":      "blocked",
+		"only_priority_creators": true,
+	})
+	b := bundle{Sets: []set{
+		{ID: "fav", Creator: "fav", Popularity: 1, Art: []artwork{
+			{ID: "poster-fav-1", Kind: "poster", SetID: "fav"},
+			{ID: "poster-fav-2", Kind: "poster", SetID: "fav"},
+			{ID: "backdrop-fav-1", Kind: "backdrop", SetID: "fav"},
+			{ID: "backdrop-fav-2", Kind: "backdrop", SetID: "fav"},
+			{ID: "logo-fav-1", Kind: "logo", SetID: "fav"},
+			{ID: "logo-fav-2", Kind: "logo", SetID: "fav"},
+			{ID: "season1-fav-1", Kind: "season", SetID: "fav", Season: 1},
+			{ID: "season1-fav-2", Kind: "season", SetID: "fav", Season: 1},
+			{ID: "special-fav-1", Kind: "season", SetID: "fav", Season: 0},
+			{ID: "special-fav-2", Kind: "season", SetID: "fav", Season: 0},
+		}},
+		{ID: "blocked", Creator: "blocked", Popularity: 100, Art: []artwork{
+			{ID: "poster-blocked", Kind: "poster", SetID: "blocked"},
+			{ID: "season1-blocked", Kind: "season", SetID: "blocked", Season: 1},
+			{ID: "special-blocked", Kind: "season", SetID: "blocked", Season: 0},
+		}},
+		{ID: "other", Creator: "other", Popularity: 99, Art: []artwork{
+			{ID: "poster-other", Kind: "poster", SetID: "other"},
+			{ID: "season1-other", Kind: "season", SetID: "other", Season: 1},
+			{ID: "special-other", Kind: "season", SetID: "other", Season: 0},
+		}},
+	}}
+	p.cache[fmt.Sprintf("%d:movie:1", p.generation)] = cacheEntry{b: b, until: time.Now().Add(time.Hour)}
+	p.cache[fmt.Sprintf("%d:series:2", p.generation)] = cacheEntry{b: b, until: time.Now().Add(time.Hour)}
+	s := &server{p: p}
+	movieIDs, _ := structpb.NewStruct(map[string]any{"tmdb": "1"})
+	seriesIDs, _ := structpb.NewStruct(map[string]any{"tmdb": "2"})
+	season1, specials := int32(1), int32(0)
+
+	tests := []struct {
+		name string
+		req  *pluginv1.GetImagesRequest
+		want []string
+	}{
+		{"movie", &pluginv1.GetImagesRequest{ItemType: "movie", ProviderIds: movieIDs}, []string{"poster-fav-1", "poster-fav-2", "backdrop-fav-1", "backdrop-fav-2", "logo-fav-1", "logo-fav-2"}},
+		{"series", &pluginv1.GetImagesRequest{ItemType: "series", ProviderIds: seriesIDs}, []string{"poster-fav-1", "poster-fav-2", "backdrop-fav-1", "backdrop-fav-2", "logo-fav-1", "logo-fav-2"}},
+		{"season", &pluginv1.GetImagesRequest{ItemType: "series", ProviderIds: seriesIDs, SeasonNumber: &season1}, []string{"season1-fav-1", "season1-fav-2"}},
+		{"specials", &pluginv1.GetImagesRequest{ItemType: "series", ProviderIds: seriesIDs, SeasonNumber: &specials}, []string{"special-fav-1", "special-fav-2"}},
+	}
+	galleryCtx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(imageRequestPurposeHeader, "gallery"))
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			images, err := s.GetImages(galleryCtx, tc.req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := imageIDs(images)
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Fatalf("gallery images = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGetImages_GalleryPurposeDoesNotChangeAutomaticSelection(t *testing.T) {
+	p := newProvider()
+	p.configure(map[string]any{"api_token": "safe", "image_selection": "BestOnly"})
+	b := bundle{Sets: []set{
+		{ID: "preferred", Creator: "preferred", Popularity: 1, Art: []artwork{{ID: "preferred", Kind: "poster", SetID: "preferred"}}},
+		{ID: "popular", Creator: "popular", Popularity: 100, Art: []artwork{{ID: "popular", Kind: "poster", SetID: "popular"}}},
+	}}
+	p.cache[fmt.Sprintf("%d:movie:1", p.generation)] = cacheEntry{b: b, until: time.Now().Add(time.Hour)}
+	s := &server{p: p}
+	ids, _ := structpb.NewStruct(map[string]any{"tmdb": "1"})
+	req := &pluginv1.GetImagesRequest{ItemType: "movie", ProviderIds: ids}
+
+	for _, ctx := range []context.Context{
+		context.Background(),
+		metadata.NewIncomingContext(context.Background(), metadata.Pairs(imageRequestPurposeHeader, "automatic")),
+		metadata.NewIncomingContext(context.Background(), metadata.Pairs(imageRequestPurposeHeader, "gallery", imageRequestPurposeHeader, "gallery")),
+		metadata.NewIncomingContext(context.Background(), metadata.Pairs(imageRequestPurposeHeader, "unknown")),
+	} {
+		images, err := s.GetImages(ctx, req)
+		if err != nil || strings.Join(imageIDs(images), ",") != "popular" {
+			t.Fatalf("automatic images = %v, err = %v", imageIDs(images), err)
+		}
+	}
+}
+
+func imageIDs(response *pluginv1.GetImagesResponse) []string {
+	ids := make([]string, 0, len(response.GetImages()))
+	for _, image := range response.GetImages() {
+		path := strings.TrimPrefix(image.GetUrl(), "mediux://")
+		ids = append(ids, strings.SplitN(path, "?", 2)[0])
+	}
+	return ids
 }
 
 func TestEpisodesUseLanguageMatchedSeriesSet(t *testing.T) {

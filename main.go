@@ -23,6 +23,7 @@ import (
 	"github.com/Silo-Server/silo-plugin-sdk/pkg/pluginsdk/manifest"
 	"github.com/Silo-Server/silo-plugin-sdk/pkg/pluginsdk/runtime"
 	"github.com/Silo-Server/silo-plugin-sdk/pkg/pluginsdk/runtimedefault"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -30,6 +31,7 @@ var version string
 
 const graphQLEndpoint = "https://images.mediux.io/graphql"
 const imageHost = "https://images.mediux.io/assets/"
+const imageRequestPurposeHeader = "silo-image-request-purpose"
 
 var assetID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$`)
 
@@ -805,7 +807,7 @@ func (s *server) GetImages(ctx context.Context, r *pluginv1.GetImagesRequest) (*
 		kind = "season"
 	}
 	cfg := s.p.snapshot()
-	all := cfg.Selection == "All"
+	all := cfg.Selection == "All" || isGalleryImageRequest(ctx)
 	as := s.p.selectArt(b, cfg, kind, season, episode, true)
 	if kind == "poster" {
 		backdrops := s.p.selectArt(b, cfg, "backdrop", 0, 0, true)
@@ -837,6 +839,17 @@ func (s *server) GetImages(ctx context.Context, r *pluginv1.GetImagesRequest) (*
 		o.Images = append(o.Images, record)
 	}
 	return o, nil
+}
+
+// isGalleryImageRequest recognizes the host's advisory picker-purpose header.
+// Missing, malformed, or repeated values retain automatic selection behavior.
+func isGalleryImageRequest(ctx context.Context) bool {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return false
+	}
+	values := md.Get(imageRequestPurposeHeader)
+	return len(values) == 1 && values[0] == "gallery"
 }
 func (s *server) GetSeasons(ctx context.Context, r *pluginv1.GetSeasonsRequest) (*pluginv1.GetSeasonsResponse, error) {
 	_, id, err := s.identity(ctx, "series", r.GetProviderIds(), r.GetSeriesProviderId())
