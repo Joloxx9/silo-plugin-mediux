@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.8
+
+- Show all eligible Mediux artwork in Silo's manual image picker while retaining automatic best-image selection for refreshes.
+
 ## 0.1.7
 
 - Add a Silo repository index for normal plugin installation and update discovery without manual ZIP downloads.
