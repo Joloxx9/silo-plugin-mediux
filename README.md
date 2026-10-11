@@ -7,7 +7,7 @@ Movie and series posters, backdrops, logos, season posters, and episode title ca
 1. Open Silo's administrator **Plugins** page, select **Catalog**, and click **Add repository**. Give it a name such as **Mediux** and use this URL:
 
    ```text
-   https://raw.githubusercontent.com/Pukabyte/silo-plugin-mediux/main/index.json
+   https://raw.githubusercontent.com/Joloxx9/silo-plugin-mediux/main/index.json
    ```
 
 2. In **Catalog**, find **Mediux Artwork** under **Other sources**, click **Install**, then enable it. If it does not appear immediately, reload the page and clear any catalog filters.
